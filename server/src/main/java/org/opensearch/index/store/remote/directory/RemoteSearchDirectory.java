@@ -53,6 +53,9 @@ public final class RemoteSearchDirectory extends Directory {
 
     @Override
     public long fileLength(String name) throws IOException {
+        // this needs to change
+        // calculate the length of the file which is downloaded
+        // one of the use-cases we need to solve
         return uploadedSegmentMetadataMap.get(name).getLength();
     }
 

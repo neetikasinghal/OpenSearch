@@ -13,6 +13,7 @@ import org.junit.Before;
 import org.opensearch.common.SuppressForbidden;
 import org.opensearch.common.breaker.TestCircuitBreaker;
 import org.opensearch.env.NodeEnvironment;
+import org.opensearch.index.store.FileTrackerImp;
 import org.opensearch.index.store.remote.directory.RemoteSnapshotDirectoryFactory;
 import org.opensearch.common.breaker.CircuitBreaker;
 import org.opensearch.common.breaker.CircuitBreakingException;
@@ -41,13 +42,13 @@ public class FileCacheTests extends OpenSearchTestCase {
     }
 
     private FileCache createFileCache(long capacity) {
-        return FileCacheFactory.createConcurrentLRUFileCache(capacity, CONCURRENCY_LEVEL, new NoopCircuitBreaker(CircuitBreaker.REQUEST));
+        return FileCacheFactory.createConcurrentLRUFileCache(capacity, CONCURRENCY_LEVEL, new NoopCircuitBreaker(CircuitBreaker.REQUEST), new FileTrackerImp());
     }
 
     private FileCache createCircuitBreakingFileCache(long capacity) {
         TestCircuitBreaker testCircuitBreaker = new TestCircuitBreaker();
         testCircuitBreaker.startBreaking();
-        return FileCacheFactory.createConcurrentLRUFileCache(capacity, CONCURRENCY_LEVEL, testCircuitBreaker);
+        return FileCacheFactory.createConcurrentLRUFileCache(capacity, CONCURRENCY_LEVEL, testCircuitBreaker, new FileTrackerImp());
     }
 
     private Path createPath(String middle) {
@@ -68,7 +69,7 @@ public class FileCacheTests extends OpenSearchTestCase {
 
     public void testCreateCacheWithSmallSegments() {
         assertThrows(IllegalStateException.class, () -> {
-            FileCacheFactory.createConcurrentLRUFileCache(1000, CONCURRENCY_LEVEL, new NoopCircuitBreaker(CircuitBreaker.REQUEST));
+            FileCacheFactory.createConcurrentLRUFileCache(1000, CONCURRENCY_LEVEL, new NoopCircuitBreaker(CircuitBreaker.REQUEST), new FileTrackerImp());
         });
     }
 
@@ -247,7 +248,7 @@ public class FileCacheTests extends OpenSearchTestCase {
         FileCache fileCache = FileCacheFactory.createConcurrentLRUFileCache(
             16 * MEGA_BYTES,
             1,
-            new NoopCircuitBreaker(CircuitBreaker.REQUEST)
+            new NoopCircuitBreaker(CircuitBreaker.REQUEST), new FileTrackerImp()
         );
         putAndDecRef(fileCache, 0, 16 * MEGA_BYTES);
 
