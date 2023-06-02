@@ -23,7 +23,7 @@ import java.nio.file.Path;
  *
  * @opensearch.internal
  */
-public class FileCachedIndexInput extends IndexInput implements RandomAccessInput {
+public class FileCachedIndexInput extends IndexInput implements RandomAccessInput, CachedIndexInput {
 
     protected final FileCache cache;
 
@@ -66,8 +66,18 @@ public class FileCachedIndexInput extends IndexInput implements RandomAccessInpu
     }
 
     @Override
+    public IndexInput getIndexInput() throws IOException {
+        return luceneIndexInput;
+    }
+
+    @Override
     public long length() {
         return luceneIndexInput.length();
+    }
+
+    @Override
+    public boolean isClosed() {
+        return false;
     }
 
     @Override

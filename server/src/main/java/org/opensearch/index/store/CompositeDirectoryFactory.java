@@ -6,18 +6,18 @@
  * compatible open source license.
  */
 
-package org.opensearch.index.store.remote.directory;
+package org.opensearch.index.store;
 
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.store.LockFactory;
 import org.opensearch.common.blobstore.BlobContainer;
 import org.opensearch.common.blobstore.BlobPath;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.index.shard.ShardPath;
-import org.opensearch.index.store.RemoteDirectory;
-import org.opensearch.index.store.RemoteSegmentStoreDirectory;
 import org.opensearch.index.store.lockmanager.RemoteStoreLockManagerFactory;
 import org.opensearch.index.store.lockmanager.RemoteStoreMetadataLockManager;
+import org.opensearch.index.store.remote.directory.RemoteSearchDirectory;
 import org.opensearch.index.store.remote.filecache.FileCache;
 import org.opensearch.index.store.remote.utils.TransferManager;
 import org.opensearch.plugins.IndexStorePlugin;
@@ -32,6 +32,7 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.function.Supplier;
 
+import static org.opensearch.index.store.FsDirectoryFactory.INDEX_LOCK_FACTOR_SETTING;
 import static org.opensearch.index.store.remote.directory.RemoteSnapshotDirectoryFactory.LOCAL_STORE_LOCATION;
 
 /**
@@ -39,13 +40,13 @@ import static org.opensearch.index.store.remote.directory.RemoteSnapshotDirector
  *
  * @opensearch.internal
  */
-public class RemoteSearchDirectoryFactory implements IndexStorePlugin.DirectoryFactory {
+public class CompositeDirectoryFactory implements IndexStorePlugin.DirectoryFactory {
 
     private final Supplier<RepositoriesService> repositoriesService;
     private final FileCache remoteStoreFileCache;
 
-    public RemoteSearchDirectoryFactory(Supplier<RepositoriesService> repositoriesService,
-                                        FileCache remoteStoreFileCache) {
+    public CompositeDirectoryFactory(Supplier<RepositoriesService> repositoriesService,
+                                     FileCache remoteStoreFileCache) {
         this.repositoriesService = repositoriesService;
         this.remoteStoreFileCache = remoteStoreFileCache;
     }
@@ -62,11 +63,16 @@ public class RemoteSearchDirectoryFactory implements IndexStorePlugin.DirectoryF
         }
     }
 
-    private RemoteSearchDirectory createRemoteSearchDirectory(
+    private CompositeDirectory createRemoteSearchDirectory(
         IndexSettings indexSettings,
         ShardPath localShardPath,
         BlobStoreRepository blobStoreRepository, String repositoryName
     ) throws IOException {
+
+        final Path location = localShardPath.resolveIndex();
+        final FSDirectory primaryDirectory = FSDirectory.open(location);
+//        final FSDirectory primaryDirectory = FSDirectory.open(Files.createDirectories(location));
+
         String shardId = String.valueOf(localShardPath.getShardId().getId());
         String indexUUID = indexSettings.getIndex().getUUID();
         BlobPath commonBlobPath = blobStoreRepository.basePath()
@@ -95,7 +101,10 @@ public class RemoteSearchDirectoryFactory implements IndexStorePlugin.DirectoryF
 
         final BlobContainer blobContainer = blobStoreRepository.blobStore().blobContainer(commonBlobPath.add("data"));
         TransferManager transferManager = new TransferManager(blobContainer, remoteStoreFileCache);
-        return new RemoteSearchDirectory(segmentsUploadedToRemoteStore, localStoreDir, transferManager);
+        FileTrackerImp fileTrackerImp = new FileTrackerImp();
+
+        return new CompositeDirectory(primaryDirectory, remoteSegmentStoreDirectory, transferManager,
+            remoteStoreFileCache, localStoreDir, fileTrackerImp);
     }
 
     private RemoteDirectory createRemoteDirectory(Repository repository, BlobPath commonBlobPath, String extention) {

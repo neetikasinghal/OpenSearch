@@ -70,6 +70,7 @@ import org.opensearch.index.shard.IndexEventListener;
 import org.opensearch.index.shard.IndexingOperationListener;
 import org.opensearch.index.shard.SearchOperationListener;
 import org.opensearch.index.similarity.SimilarityService;
+import org.opensearch.index.store.CompositeDirectoryFactory;
 import org.opensearch.index.store.FsDirectoryFactory;
 import org.opensearch.index.store.remote.directory.RemoteSearchDirectoryFactory;
 import org.opensearch.index.store.remote.directory.RemoteSnapshotDirectoryFactory;
@@ -686,9 +687,13 @@ public final class IndexModule {
                     );
                     break;
                 case REMOTE_SEARCH:
+//                    factories.put(
+//                        type.getSettingsKey(),
+//                        new RemoteSearchDirectoryFactory(repositoriesService, remoteStoreFileCache)
+//                    );
                     factories.put(
                         type.getSettingsKey(),
-                        new RemoteSearchDirectoryFactory(repositoriesService, remoteStoreFileCache)
+                        new CompositeDirectoryFactory(repositoriesService, remoteStoreFileCache)
                     );
                     break;
                 default:

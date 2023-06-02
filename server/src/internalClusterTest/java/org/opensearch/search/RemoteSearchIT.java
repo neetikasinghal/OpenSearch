@@ -116,4 +116,29 @@ public class RemoteSearchIT extends AbstractSnapshotIntegTestCase {
         // Perform search on the index again
         assertDocCount(indexName, 100L);
     }
+
+    public void testWritableWarmIndex() throws Exception {
+        final String indexName = "test-idx-1";
+        final int numReplicasIndex = randomIntBetween(0, 3);
+        final int numOfDocs = 100;
+
+        // Spin up node having search/data roles
+        internalCluster().ensureAtLeastNumSearchAndDataNodes(numReplicasIndex + 1);
+
+        // Create index with remote translog index settings
+        createIndex(indexName, Settings.builder()
+            .put(remoteTranslogIndexSettings(numReplicasIndex))
+            .put(INDEX_STORE_TYPE_SETTING.getKey(), "remote_search")
+            .build());
+        ensureGreen();
+
+        // Index some documents
+        indexRandomDocs(indexName, numOfDocs);
+        ensureGreen();
+        // Search the documents on the index
+        assertDocCount(indexName, 100L);
+
+        // Perform search on the index again
+        assertDocCount(indexName, 100L);
+    }
 }
