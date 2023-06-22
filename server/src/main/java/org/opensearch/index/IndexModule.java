@@ -71,6 +71,7 @@ import org.opensearch.index.shard.IndexingOperationListener;
 import org.opensearch.index.shard.SearchOperationListener;
 import org.opensearch.index.similarity.SimilarityService;
 import org.opensearch.index.store.CompositeDirectoryFactory;
+import org.opensearch.index.store.FileTrackerImp;
 import org.opensearch.index.store.FsDirectoryFactory;
 import org.opensearch.index.store.remote.directory.RemoteSearchDirectoryFactory;
 import org.opensearch.index.store.remote.directory.RemoteSnapshotDirectoryFactory;
@@ -668,7 +669,8 @@ public final class IndexModule {
     public static Map<String, IndexStorePlugin.DirectoryFactory> createBuiltInDirectoryFactories(
         Supplier<RepositoriesService> repositoriesService,
         ThreadPool threadPool,
-        FileCache remoteStoreFileCache
+        FileCache remoteStoreFileCache,
+        FileTrackerImp fileTrackerImp
     ) {
         final Map<String, IndexStorePlugin.DirectoryFactory> factories = new HashMap<>();
         for (Type type : Type.values()) {
@@ -693,7 +695,7 @@ public final class IndexModule {
 //                    );
                     factories.put(
                         type.getSettingsKey(),
-                        new CompositeDirectoryFactory(repositoriesService, remoteStoreFileCache)
+                        new CompositeDirectoryFactory(repositoriesService, remoteStoreFileCache, fileTrackerImp)
                     );
                     break;
                 default:

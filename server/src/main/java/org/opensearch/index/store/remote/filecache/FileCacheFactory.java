@@ -10,6 +10,8 @@ package org.opensearch.index.store.remote.filecache;
 
 import org.opensearch.common.breaker.CircuitBreaker;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.index.store.FileTrackerImp;
+import org.opensearch.index.store.FileTrackingInfo;
 import org.opensearch.index.store.remote.utils.cache.SegmentedCache;
 import org.opensearch.index.store.remote.file.OnDemandBlockSnapshotIndexInput;
 
@@ -38,12 +40,16 @@ import static org.opensearch.ExceptionsHelper.catchAsRuntimeException;
  */
 public class FileCacheFactory {
 
-    public static FileCache createConcurrentLRUFileCache(long capacity, CircuitBreaker circuitBreaker) {
-        return createFileCache(createDefaultBuilder().capacity(capacity).build(), circuitBreaker);
+//    public static FileCache createConcurrentLRUFileCache(long capacity, CircuitBreaker circuitBreaker) {
+//        return createFileCache(createDefaultBuilder().capacity(capacity).build(), circuitBreaker);
+//    }
+
+    public static FileCache createConcurrentLRUFileCache(long capacity, CircuitBreaker circuitBreaker, FileTrackerImp fileTrackerImp) {
+        return createFileCache(createDefaultBuilder(fileTrackerImp).capacity(capacity).build(), circuitBreaker);
     }
 
-    public static FileCache createConcurrentLRUFileCache(long capacity, int concurrencyLevel, CircuitBreaker circuitBreaker) {
-        return createFileCache(createDefaultBuilder().capacity(capacity).concurrencyLevel(concurrencyLevel).build(), circuitBreaker);
+    public static FileCache createConcurrentLRUFileCache(long capacity, int concurrencyLevel, CircuitBreaker circuitBreaker, FileTrackerImp fileTrackerImp) {
+        return createFileCache(createDefaultBuilder(fileTrackerImp).capacity(capacity).concurrencyLevel(concurrencyLevel).build(), circuitBreaker);
     }
 
     private static FileCache createFileCache(SegmentedCache<Path, CachedIndexInput> segmentedCache, CircuitBreaker circuitBreaker) {
@@ -59,7 +65,7 @@ public class FileCacheFactory {
         return new FileCache(segmentedCache, circuitBreaker);
     }
 
-    private static SegmentedCache.Builder<Path, CachedIndexInput> createDefaultBuilder() {
+    private static SegmentedCache.Builder<Path, CachedIndexInput> createDefaultBuilder(FileTrackerImp fileTrackerImp) {
         return SegmentedCache.<Path, CachedIndexInput>builder()
             // use length in bytes as the weight of the file item
             .weigher(CachedIndexInput::length)
@@ -67,9 +73,15 @@ public class FileCacheFactory {
                 RemovalReason removalReason = removalNotification.getRemovalReason();
                 CachedIndexInput value = removalNotification.getValue();
                 Path key = removalNotification.getKey();
+                String fileName = key.toFile().getName();
                 if (removalReason != RemovalReason.REPLACED) {
                     catchAsRuntimeException(value::close);
                     catchAsRuntimeException(() -> Files.deleteIfExists(key));
+                    catchAsRuntimeException(() -> {
+                        if (fileTrackerImp.isPresent(fileName)) {
+                            fileTrackerImp.updateState(fileName, FileTrackingInfo.FileState.REMOTE_ONLY);
+                        }
+                    });
                 }
             });
     }

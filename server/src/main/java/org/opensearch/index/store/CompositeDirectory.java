@@ -15,6 +15,7 @@ import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.store.Lock;
 import org.opensearch.index.store.remote.file.OnDemandBlockSearchIndexInput;
+import org.opensearch.index.store.remote.filecache.CachedIndexInput;
 import org.opensearch.index.store.remote.filecache.FileCache;
 import org.opensearch.index.store.remote.filecache.FileCachedIndexInput;
 import org.opensearch.index.store.remote.utils.TransferManager;
@@ -55,17 +56,17 @@ public class CompositeDirectory extends FilterDirectory {
 
     @Override
     public String[] listAll() throws IOException {
-        return new String[0];
+        return localDirectory.listAll();
     }
 
     @Override
     public void deleteFile(String name) throws IOException {
-
+        localDirectory.deleteFile(name);
     }
 
     @Override
     public long fileLength(String name) throws IOException {
-        return 0;
+        return localDirectory.fileLength(name);
     }
 
     @Override
@@ -75,7 +76,7 @@ public class CompositeDirectory extends FilterDirectory {
 
     @Override
     public IndexOutput createTempOutput(String prefix, String suffix, IOContext context) throws IOException {
-        return null;
+        return localDirectory.createTempOutput(prefix, suffix, context);
     }
 
     @Override
@@ -108,7 +109,7 @@ public class CompositeDirectory extends FilterDirectory {
 
     @Override
     public void rename(String source, String dest) throws IOException {
-
+        localDirectory.rename(source, dest);
     }
 
     @Override
@@ -122,24 +123,42 @@ public class CompositeDirectory extends FilterDirectory {
             // later - add IOContext decider
             fileTrackerImp.updateFileType(name, FileTrackingInfo.FileType.BLOCK);
         }
-
+        // later - check the file tracker type
 //        if(FileTrackingInfo.FileType.BLOCK.equals(fileTrackingInfo.getFileType())) {
 //        }
+
+        Path key = localDirectory.getDirectory().resolve(name);
+        CachedIndexInput cachedIndexInput = fileCache.get(key);
+        if (cachedIndexInput != null) {
+            try {
+                return cachedIndexInput.getIndexInput().clone();
+            } finally {
+                fileCache.decRef(key);
+            }
+        }
         return new OnDemandBlockSearchIndexInput(fileTrackingInfo.getUploadedSegmentMetadata(), localCacheDir, transferManager);
     }
 
     @Override
     public Lock obtainLock(String name) throws IOException {
-        return null;
+        return localDirectory.obtainLock(name);
     }
 
     @Override
     public void close() throws IOException {
-
+        localDirectory.close();
     }
 
     @Override
     public Set<String> getPendingDeletions() throws IOException {
-        return null;
+        return localDirectory.getPendingDeletions();
+    }
+
+    public FSDirectory localDirectory() {
+        return localDirectory;
+    }
+
+    public RemoteSegmentStoreDirectory remoteDirectory() {
+        return remoteDirectory;
     }
 }

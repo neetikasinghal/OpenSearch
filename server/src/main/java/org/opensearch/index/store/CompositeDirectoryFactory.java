@@ -44,11 +44,14 @@ public class CompositeDirectoryFactory implements IndexStorePlugin.DirectoryFact
 
     private final Supplier<RepositoriesService> repositoriesService;
     private final FileCache remoteStoreFileCache;
+    private FileTrackerImp fileTrackerImp;
 
     public CompositeDirectoryFactory(Supplier<RepositoriesService> repositoriesService,
-                                     FileCache remoteStoreFileCache) {
+                                     FileCache remoteStoreFileCache,
+                                     FileTrackerImp fileTrackerImp) {
         this.repositoriesService = repositoriesService;
         this.remoteStoreFileCache = remoteStoreFileCache;
+        this.fileTrackerImp = fileTrackerImp;
     }
 
     @Override
@@ -101,7 +104,6 @@ public class CompositeDirectoryFactory implements IndexStorePlugin.DirectoryFact
 
         final BlobContainer blobContainer = blobStoreRepository.blobStore().blobContainer(commonBlobPath.add("data"));
         TransferManager transferManager = new TransferManager(blobContainer, remoteStoreFileCache);
-        FileTrackerImp fileTrackerImp = new FileTrackerImp();
 
         return new CompositeDirectory(primaryDirectory, remoteSegmentStoreDirectory, transferManager,
             remoteStoreFileCache, localStoreDir, fileTrackerImp);

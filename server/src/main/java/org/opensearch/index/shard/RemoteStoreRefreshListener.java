@@ -19,7 +19,6 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FilterDirectory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.store.*;
 import org.opensearch.action.bulk.BackoffPolicy;
 import org.opensearch.common.CheckedFunction;
 import org.opensearch.common.concurrent.GatedCloseable;
@@ -118,12 +117,13 @@ public final class RemoteStoreRefreshListener implements ReferenceManager.Refres
         RemoteRefreshSegmentTracker segmentTracker
     ) {
         this.indexShard = indexShard;
-        this.compositeDirectory = (CompositeDirectory) ((FilterDirectory) indexShard.store().directory()).getDelegate();
+        this.compositeDirectory = (CompositeDirectory) ((FilterDirectory) ((FilterDirectory) indexShard.store().directory())
+            .getDelegate()).getDelegate();
 //        this.storeDirectory = indexShard.store().directory();
 //        this.remoteDirectory = (RemoteSegmentStoreDirectory) ((FilterDirectory) ((FilterDirectory) indexShard.remoteStore().directory())
 //            .getDelegate()).getDelegate();
-        this.storeDirectory =  (FSDirectory) ((CompositeDirectory) ((FilterDirectory) indexShard.store().directory()).getDelegate()).getDelegate();
-        this.remoteDirectory = (RemoteSegmentStoreDirectory) ((CompositeDirectory) ((FilterDirectory) indexShard.store().directory()).getDelegate()).getDelegate();
+        this.storeDirectory =  compositeDirectory.localDirectory();
+        this.remoteDirectory = compositeDirectory.remoteDirectory();
         this.primaryTerm = indexShard.getOperationPrimaryTerm();
         localSegmentChecksumMap = new HashMap<>();
         // this will be initialized by the composite directory
@@ -240,6 +240,7 @@ public final class RemoteStoreRefreshListener implements ReferenceManager.Refres
                             uploadMetadata(localSegmentsPostRefresh, segmentInfos);
                             clearStaleFilesFromLocalSegmentChecksumMap(localSegmentsPostRefresh);
                             onSuccessfulSegmentsSync(refreshTimeMs, refreshClockTimeMs, refreshSeqNo, lastRefreshedCheckpoint, checkpoint);
+                            compositeDirectory.afterUpload(localSegmentsPostRefresh);
                             // At this point since we have uploaded new segments, segment infos and segment metadata file,
                             // along with marking minSeqNoToKeep, upload has succeeded completely.
                             shouldRetry = false;
