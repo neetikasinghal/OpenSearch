@@ -87,18 +87,24 @@ public class CompositeDirectory extends FilterDirectory {
     public void afterUpload(Collection<String> names) throws IOException {
         // upload to remote store, add to the filetracker
         Map<String, RemoteSegmentStoreDirectory.UploadedSegmentMetadata> segmentsUploadedToRemoteStore = remoteDirectory.getSegmentsUploadedToRemoteStore();
+        Map<String, FileTrackingInfo> fileTrackingInfoMap = fileTrackerImp.getFileTrackingInfoMap();
         for (String file : names) {
             final IndexInput luceneIndexInput = localDirectory.openInput(file, IOContext.READ);
             Path path = localDirectory.getDirectory().resolve(file);
-            FileCachedIndexInput fileCachedIndexInput = new FileCachedIndexInput(fileCache, path, luceneIndexInput);
-            // have another impl of CachedIndexInput and put that here
-            // add to the file cache
-            fileCache.put(path, fileCachedIndexInput);
-
-            // add to the file tracker
-            FileTrackingInfo fileTrackingInfo = new FileTrackingInfo(file, FileTrackingInfo.FileState.CACHE,
-                FileTrackingInfo.FileType.NON_BLOCK, path, segmentsUploadedToRemoteStore.get(file));
-            fileTrackerImp.getFileTrackingInfoMap().put(file, fileTrackingInfo);
+            FileTrackingInfo fileTrackingInfo = fileTrackingInfoMap.get(file);
+            if(fileTrackingInfo != null && FileTrackingInfo.FileState.DISK.equals(fileTrackingInfo.getFileState())) {
+                // since now the file has been uploaded, decrementing the ref count to make it evictable
+                fileCache.decRef(path);
+            } else {
+                // to check - if the file is already added to the cache and there is an update to the file, do we need a new
+                // object creation here? i think yes
+                FileCachedIndexInput fileCachedIndexInput = new FileCachedIndexInput(fileCache, path, luceneIndexInput);
+                // add to the file cache
+                fileCache.put(path, fileCachedIndexInput);
+                // add to the file tracker
+            }
+            fileTrackingInfoMap.put(file, new FileTrackingInfo(file, FileTrackingInfo.FileState.CACHE,
+                FileTrackingInfo.FileType.NON_BLOCK, path, segmentsUploadedToRemoteStore.get(file)));
         }
     }
 
@@ -115,19 +121,23 @@ public class CompositeDirectory extends FilterDirectory {
     @Override
     public IndexInput openInput(String name, IOContext context) throws IOException {
         // check the filetracker
-        if (!fileTrackerImp.isPresent(name)) {
-            return localDirectory.openInput(name, context);
-        }
-        FileTrackingInfo fileTrackingInfo = fileTrackerImp.getFileTrackingInfoMap().get(name);
-        if(FileTrackingInfo.FileState.REMOTE_ONLY.equals(fileTrackingInfo.getFileState())) {
-            // later - add IOContext decider
-            fileTrackerImp.updateFileType(name, FileTrackingInfo.FileType.BLOCK);
-        }
-        // later - check the file tracker type
-//        if(FileTrackingInfo.FileType.BLOCK.equals(fileTrackingInfo.getFileType())) {
-//        }
-
         Path key = localDirectory.getDirectory().resolve(name);
+        Map<String, RemoteSegmentStoreDirectory.UploadedSegmentMetadata> segmentsUploadedToRemoteStore = remoteDirectory.getSegmentsUploadedToRemoteStore();
+        Map<String, FileTrackingInfo> fileTrackingInfoMap = fileTrackerImp.getFileTrackingInfoMap();
+        if (!fileTrackerImp.isPresent(name)) {
+            final IndexInput luceneIndexInput = localDirectory.openInput(name, context);
+            FileCachedIndexInput fileCachedIndexInput = new FileCachedIndexInput(fileCache, key, luceneIndexInput);
+            // add to the file cache
+            fileCache.put(key, fileCachedIndexInput);
+
+            // add to the file tracker
+            FileTrackingInfo fileTrackingInfo = new FileTrackingInfo(name, FileTrackingInfo.FileState.DISK,
+                FileTrackingInfo.FileType.NON_BLOCK, key, segmentsUploadedToRemoteStore.get(name));
+            fileTrackingInfoMap.put(name, fileTrackingInfo);
+
+            return fileCachedIndexInput.clone();
+        }
+
         CachedIndexInput cachedIndexInput = fileCache.get(key);
         if (cachedIndexInput != null) {
             try {
@@ -136,6 +146,15 @@ public class CompositeDirectory extends FilterDirectory {
                 fileCache.decRef(key);
             }
         }
+
+        FileTrackingInfo fileTrackingInfo = fileTrackingInfoMap.get(name);
+        if(FileTrackingInfo.FileState.REMOTE_ONLY.equals(fileTrackingInfo.getFileState())) {
+            // later - add IOContext decider
+            fileTrackerImp.updateFileType(name, FileTrackingInfo.FileType.BLOCK);
+        }
+        // later - check the file tracker type
+//        if(FileTrackingInfo.FileType.BLOCK.equals(fileTrackingInfo.getFileType())) {
+//        }
         return new OnDemandBlockSearchIndexInput(fileTrackingInfo.getUploadedSegmentMetadata(), localCacheDir, transferManager);
     }
 

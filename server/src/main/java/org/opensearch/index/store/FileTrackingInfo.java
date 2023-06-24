@@ -56,6 +56,7 @@ public class FileTrackingInfo {
      * needs an update
      */
     public enum FileState {
+        DISK("disk"),
         CACHE("cache"),
         REMOTE_ONLY("remote_only");
 
