@@ -53,7 +53,11 @@ import static org.opensearch.index.query.QueryBuilders.scriptQuery;
 import static org.opensearch.search.SearchTimeoutIT.ScriptedTimeoutPlugin.SCRIPT_NAME;
 
 @OpenSearchIntegTestCase.ClusterScope(scope = OpenSearchIntegTestCase.Scope.SUITE)
-public class SearchTimeoutIT extends OpenSearchIntegTestCase {
+public class SearchTimeoutIT extends ConcurrentSearchIntegTestCase {
+
+    public SearchTimeoutIT(boolean concurrentFeatureFlagVal) {
+        super(concurrentFeatureFlagVal);
+    }
 
     @Override
     protected Collection<Class<? extends Plugin>> nodePlugins() {

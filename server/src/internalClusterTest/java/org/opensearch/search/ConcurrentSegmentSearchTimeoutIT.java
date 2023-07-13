@@ -15,6 +15,10 @@ import org.opensearch.common.util.FeatureFlags;
 
 public class ConcurrentSegmentSearchTimeoutIT extends SearchTimeoutIT {
 
+    public ConcurrentSegmentSearchTimeoutIT(boolean concurrentFeatureFlagVal) {
+        super(concurrentFeatureFlagVal);
+    }
+
     @Override
     protected Settings featureFlagSettings() {
         Settings.Builder featureSettings = Settings.builder();

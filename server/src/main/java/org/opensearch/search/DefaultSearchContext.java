@@ -32,6 +32,8 @@
 
 package org.opensearch.search;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BoostQuery;
@@ -87,6 +89,7 @@ import org.opensearch.search.internal.ShardSearchContextId;
 import org.opensearch.search.internal.ShardSearchRequest;
 import org.opensearch.search.profile.Profilers;
 import org.opensearch.search.query.QueryPhaseExecutionException;
+import org.opensearch.search.query.QueryPhaseSearcherWrapper;
 import org.opensearch.search.query.QuerySearchResult;
 import org.opensearch.search.query.ReduceableSearchResult;
 import org.opensearch.search.rescore.RescoreContext;
@@ -183,6 +186,7 @@ final class DefaultSearchContext extends SearchContext {
     private final FetchPhase fetchPhase;
     private final Function<SearchSourceBuilder, InternalAggregation.ReduceContextBuilder> requestToAggReduceContextBuilder;
 
+    private static final Logger LOGGER = LogManager.getLogger(DefaultSearchContext.class);
     DefaultSearchContext(
         ReaderContext readerContext,
         ShardSearchRequest request,
@@ -877,6 +881,8 @@ final class DefaultSearchContext extends SearchContext {
      */
     @Override
     public boolean isConcurrentSegmentSearchEnabled() {
+        boolean enabled = FeatureFlags.isEnabled(FeatureFlags.CONCURRENT_SEGMENT_SEARCH);
+        LOGGER.info("DefaultSearchContext flag {}", enabled);
         if (FeatureFlags.isEnabled(FeatureFlags.CONCURRENT_SEGMENT_SEARCH)
             && (clusterService != null)
             && (searcher().getExecutor() != null)) {

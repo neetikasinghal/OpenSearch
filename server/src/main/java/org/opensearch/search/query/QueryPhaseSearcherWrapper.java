@@ -33,7 +33,9 @@ public class QueryPhaseSearcherWrapper implements QueryPhaseSearcher {
 
     public QueryPhaseSearcherWrapper() {
         this.defaultQueryPhaseSearcher = new QueryPhase.DefaultQueryPhaseSearcher();
-        this.concurrentQueryPhaseSearcher = FeatureFlags.isEnabled(FeatureFlags.CONCURRENT_SEGMENT_SEARCH)
+        boolean enabled = FeatureFlags.isEnabled(FeatureFlags.CONCURRENT_SEGMENT_SEARCH);
+        LOGGER.info("QueryPhaseSearcherWrapper flag {}", enabled);
+        this.concurrentQueryPhaseSearcher = enabled
             ? new ConcurrentQueryPhaseSearcher()
             : null;
     }
