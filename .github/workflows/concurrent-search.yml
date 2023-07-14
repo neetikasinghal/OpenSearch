@@ -6,7 +6,6 @@ on: [push, pull_request]
 jobs:
   precommit:
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
     strategy:
       matrix:
         os: [ubuntu-latest]  # precommit on ubuntu-latest is run as a part of the gradle-check workflow
@@ -24,13 +23,16 @@ jobs:
         run: |
           ./gradlew internalClusterTest -Dopensearch.experimental.feature.concurrent_segment_search.enabled=true
       - name: Upload Coverage Integration Test Report
+        if: always()
         uses: codecov/codecov-action@v2
         with:
           files: ./build/reports/jacoco/test/integrationTestReport.xml
       - name: Run Gradle unit tests
+        if: always()
         run: |
           ./gradlew test -Dopensearch.experimental.feature.concurrent_segment_search.enabled=true
       - name: Upload Coverage Unit Test Report
+        if: always()
         uses: codecov/codecov-action@v2
         with:
           files: ./build/reports/jacoco/test/unitTestReport.xml
