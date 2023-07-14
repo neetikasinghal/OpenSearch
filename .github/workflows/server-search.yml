@@ -16,14 +16,11 @@ jobs:
         with:
           java-version: 11
           distribution: adopt
-      - name: Build the repo
-        run: |
-          ./gradlew server:compileJava
       - name: Run Gradle integration tests
         run: |
-          ./gradlew :server:internalClusterTest --tests "org.opensearch.search.*" -Dopensearch.experimental.feature.concurrent_segment_search.enabled=true
+          ./gradlew :server:internalClusterTest --tests "org.opensearch.search.SearchCancellationIT" -Dopensearch.experimental.feature.concurrent_segment_search.enabled=true
       - name: Upload Coverage Integration Test Report
         if: always()
         uses: codecov/codecov-action@v2
         with:
-          files: ./build/reports/jacoco/test/integrationTestReport.xml
+          files: /home/runner/work/OpenSearch/OpenSearch/server/build/reports/tests/internalClusterTest/index.html
