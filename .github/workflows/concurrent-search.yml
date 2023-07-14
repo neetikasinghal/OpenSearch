@@ -18,7 +18,7 @@ jobs:
           distribution: adopt
       - name: Build the repo
         run: |
-          ./gradlew assemble
+          ./gradlew assemble -x :distribution:docker:buildArm64DockerImage -x :distribution:docker:buildDockerImage -x :distribution:docker:buildPpc64leDockerImage -x :distribution:docker:docker-export:exportDockerImage -x :distribution:docker:buildS390xDockerImage -x :distribution:docker:docker-ppc64le-export:exportDockerImage -x :distribution:docker:docker-s390x-export:exportDockerImage
       - name: Run Gradle unit tests
         run: |
           ./gradlew test -Dopensearch.experimental.feature.concurrent_segment_search.enabled=true
