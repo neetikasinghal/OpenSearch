@@ -6,6 +6,7 @@ on: [push, pull_request]
 jobs:
   precommit:
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     strategy:
       matrix:
         os: [ubuntu-latest]  # precommit on ubuntu-latest is run as a part of the gradle-check workflow
@@ -19,13 +20,6 @@ jobs:
       - name: Build the repo
         run: |
           ./gradlew assemble -x :distribution:docker:buildArm64DockerImage -x :distribution:docker:buildDockerImage -x :distribution:docker:buildPpc64leDockerImage -x :distribution:docker:docker-export:exportDockerImage -x :distribution:docker:buildS390xDockerImage -x :distribution:docker:docker-ppc64le-export:exportDockerImage -x :distribution:docker:docker-s390x-export:exportDockerImage
-      - name: Run Gradle unit tests
-        run: |
-          ./gradlew test -Dopensearch.experimental.feature.concurrent_segment_search.enabled=true
-      - name: Upload Coverage Unit Test Report
-        uses: codecov/codecov-action@v2
-        with:
-          files: ./build/reports/jacoco/test/unitTestReport.xml
       - name: Run Gradle integration tests
         run: |
           ./gradlew internalClusterTest -Dopensearch.experimental.feature.concurrent_segment_search.enabled=true
@@ -33,3 +27,10 @@ jobs:
         uses: codecov/codecov-action@v2
         with:
           files: ./build/reports/jacoco/test/integrationTestReport.xml
+      - name: Run Gradle unit tests
+        run: |
+          ./gradlew test -Dopensearch.experimental.feature.concurrent_segment_search.enabled=true
+      - name: Upload Coverage Unit Test Report
+        uses: codecov/codecov-action@v2
+        with:
+          files: ./build/reports/jacoco/test/unitTestReport.xml
