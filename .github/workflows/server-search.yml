@@ -21,6 +21,6 @@ jobs:
           ./gradlew :server:internalClusterTest --tests "org.opensearch.search.SearchCancellationIT" -Dopensearch.experimental.feature.concurrent_segment_search.enabled=true
       - name: Upload Coverage Integration Test Report
         if: always()
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v3
         with:
           files: /home/runner/work/OpenSearch/OpenSearch/server/build/reports/tests/internalClusterTest/index.html
