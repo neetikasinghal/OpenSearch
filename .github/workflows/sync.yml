@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: tgymnich/fork-sync@v1.8
         with:
-          owner: neetiks
+          owner: neetikasinghal
           base: main
           head: main
 
