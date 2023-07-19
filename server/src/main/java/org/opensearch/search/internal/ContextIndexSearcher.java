@@ -518,4 +518,10 @@ public class ContextIndexSearcher extends IndexSearcher implements Releasable {
         }
         return false;
     }
+    @Override
+    protected LeafSlice[] slices(List<LeafReaderContext> leaves) {
+        final LeafSlice[] leafSlices = slices(leaves, 1, 1);
+        System.out.println("ManualTesting-========= slice count: " + leafSlices.length);
+        return leafSlices;
+    }
 }
