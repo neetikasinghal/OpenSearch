@@ -33,6 +33,7 @@ package org.opensearch.search.aggregations;
 
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.breaker.CircuitBreaker;
+import org.opensearch.common.breaker.CircuitBreakingException;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.common.settings.Setting;
@@ -42,6 +43,8 @@ import org.opensearch.core.rest.RestStatus;
 import org.opensearch.search.aggregations.bucket.BucketsAggregator;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.IntConsumer;
 
 /**
@@ -130,6 +133,9 @@ public class MultiBucketConsumerService {
         // aggregations execute in a single thread so no atomic here
         private int count;
         private int callCount = 0;
+        private LongAdder callCount2 = new LongAdder();
+        private boolean circuitBreakerTripped;
+        private AtomicBoolean circuitBreakerTripped3 = new AtomicBoolean(false);
 
         public MultiBucketConsumer(int limit, CircuitBreaker breaker) {
             this.limit = limit;
@@ -157,6 +163,105 @@ public class MultiBucketConsumerService {
             callCount++;
             if ((callCount & 0x3FF) == 0) {
                 breaker.addEstimateBytesAndMaybeBreak(0, "allocated_buckets");
+            }
+        }
+
+        /*
+         * Has a synchronized block in the method, which makes call count as thread safe
+         * and essentially trips the circuit breaker for the other threads if one of the threads has
+         * already tripped
+         * */
+        public void accept1(int value) {
+            if (value != 0) {
+                count += value;
+                if (count > limit) {
+                    throw new TooManyBucketsException(
+                        "Trying to create too many buckets. Must be less than or equal to: ["
+                            + limit
+                            + "] but was ["
+                            + count
+                            + "]. This limit can be set by changing the ["
+                            + MAX_BUCKET_SETTING.getKey()
+                            + "] cluster level setting.",
+                        limit
+                    );
+                }
+            }
+            synchronized (this) {
+                callCount++;
+                // check parent circuit breaker every 1024 calls
+                if ((callCount & 0x3) == 0 || circuitBreakerTripped) {
+                    try {
+                        breaker.addEstimateBytesAndMaybeBreak(0, "allocated_buckets");
+                    } catch (CircuitBreakingException e) {
+                        circuitBreakerTripped = true;
+                        throw e;
+                    }
+                }
+            }
+        }
+
+        /*
+         * Makes callCount as a LongAdder variable making it thread safe but this doesn't
+         * trip the CB on the other threads if one of the thread already has a circuit breaker
+         * */
+        public void accept2(int value) {
+            if (value != 0) {
+                count += value;
+                if (count > limit) {
+                    throw new TooManyBucketsException(
+                        "Trying to create too many buckets. Must be less than or equal to: ["
+                            + limit
+                            + "] but was ["
+                            + count
+                            + "]. This limit can be set by changing the ["
+                            + MAX_BUCKET_SETTING.getKey()
+                            + "] cluster level setting.",
+                        limit
+                    );
+                }
+            }
+            callCount2.increment();
+            // check parent circuit breaker every 1024 calls
+            if ((callCount2.sum() & 0x3) == 0) {
+                breaker.addEstimateBytesAndMaybeBreak(0, "allocated_buckets");
+            }
+        }
+        /*
+         * Makes callCount as a LongAdder variable making it thread safe and also has an additional
+         * Atomic variable that tries to trip the CB for the other threads in case for one of the threads CB has already
+         * tripped. This doesn't guarantee that all the threads would essentially trip CB after the first thread tripped
+         * as there can be thread that could come for a check in the interval between circuitBreakerTripped3 variable is set
+         * vs circuitBreakerTripped3 variable is tried on get
+         * */
+        public void accept3(int value) {
+            if (value != 0) {
+                count += value;
+                if (count > limit) {
+                    throw new TooManyBucketsException(
+                        "Trying to create too many buckets. Must be less than or equal to: ["
+                            + limit
+                            + "] but was ["
+                            + count
+                            + "]. This limit can be set by changing the ["
+                            + MAX_BUCKET_SETTING.getKey()
+                            + "] cluster level setting.",
+                        limit
+                    );
+                }
+            }
+            callCount2.increment();
+            if(circuitBreakerTripped3.get()) {
+                throw new CircuitBreakingException("test", CircuitBreaker.Durability.PERMANENT);
+            }
+            // check parent circuit breaker every 1024 calls
+            if ((callCount2.sum() & 0x3) == 0) {
+                try {
+                    breaker.addEstimateBytesAndMaybeBreak(0, "allocated_buckets");
+                } catch (CircuitBreakingException e) {
+                    circuitBreakerTripped3.set(true);
+                    throw e;
+                }
             }
         }
 

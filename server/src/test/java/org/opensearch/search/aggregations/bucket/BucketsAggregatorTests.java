@@ -32,6 +32,8 @@
 
 package org.opensearch.search.aggregations.bucket;
 
+import com.carrotsearch.randomizedtesting.annotations.Repeat;
+import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.index.DirectoryReader;
@@ -41,6 +43,7 @@ import org.apache.lucene.tests.index.RandomIndexWriter;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.store.Directory;
 import org.opensearch.common.breaker.CircuitBreaker;
+import org.opensearch.common.breaker.CircuitBreakingException;
 import org.opensearch.index.mapper.NumberFieldMapper;
 import org.opensearch.indices.breaker.NoneCircuitBreakerService;
 import org.opensearch.search.aggregations.AggregatorFactories;
@@ -51,9 +54,15 @@ import org.opensearch.search.aggregations.MultiBucketConsumerService;
 import org.opensearch.search.internal.SearchContext;
 
 import java.io.IOException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.opensearch.search.aggregations.MultiBucketConsumerService.DEFAULT_MAX_BUCKETS;
 
+@ThreadLeakScope(ThreadLeakScope.Scope.NONE)
 public class BucketsAggregatorTests extends AggregatorTestCase {
 
     public BucketsAggregator buildMergeAggregator() throws IOException {
@@ -138,5 +147,89 @@ public class BucketsAggregatorTests extends AggregatorTestCase {
         for (int i = 0; i < 10; i++) {
             assertEquals(mergeAggregator.getDocCounts().get(i), i == 5 ? sum : 0);
         }
+    }
+
+    @Repeat(iterations = 1000, useConstantSeed = true)
+    public void testMultiConsumerAcceptOne() throws Exception {
+        CircuitBreaker breaker = mock(CircuitBreaker.class);
+        MultiBucketConsumerService.MultiBucketConsumer multiBucketConsumer = new MultiBucketConsumerService.MultiBucketConsumer(
+            DEFAULT_MAX_BUCKETS,
+            breaker
+        );
+
+        when(breaker.addEstimateBytesAndMaybeBreak(0, "allocated_buckets")).thenThrow(CircuitBreakingException.class);
+        int numberOfThreads = 5;
+        ExecutorService service = Executors.newFixedThreadPool(10);
+        CountDownLatch latch = new CountDownLatch(numberOfThreads);
+        long start = System.currentTimeMillis();
+        for (int i = 0; i < numberOfThreads; i++) {
+            service.submit(() -> {
+                try {
+                    multiBucketConsumer.accept1(0);
+                } catch (CircuitBreakingException e) {
+                    System.out.println("CircuitBreaker was thrown");
+                }
+                latch.countDown();
+            });
+        }
+        long end = System.currentTimeMillis();
+        latch.await();
+        System.out.println("DEBUG: accept1 took " + (end - start) + " MilliSeconds");
+    }
+
+    @Repeat(iterations = 1000, useConstantSeed = true)
+    public void testMultiConsumerAcceptFunctionTwo() throws InterruptedException {
+        CircuitBreaker breaker = mock(CircuitBreaker.class);
+        MultiBucketConsumerService.MultiBucketConsumer multiBucketConsumer = new MultiBucketConsumerService.MultiBucketConsumer(
+            DEFAULT_MAX_BUCKETS,
+            breaker
+        );
+
+        when(breaker.addEstimateBytesAndMaybeBreak(0, "allocated_buckets")).thenThrow(CircuitBreakingException.class);
+        int numberOfThreads = 5;
+        ExecutorService service = Executors.newFixedThreadPool(10);
+        CountDownLatch latch = new CountDownLatch(numberOfThreads);
+        long start = System.currentTimeMillis();
+        for (int i = 0; i < numberOfThreads; i++) {
+            service.submit(() -> {
+                try {
+                    multiBucketConsumer.accept2(0);
+                } catch (CircuitBreakingException e) {
+                    System.out.println("CircuitBreaker was thrown");
+                }
+                latch.countDown();
+            });
+        }
+        long end = System.currentTimeMillis();
+        latch.await();
+        System.out.println("DEBUG: accept2 took " + (end - start) + " MilliSeconds");
+    }
+
+    @Repeat(iterations = 1000, useConstantSeed = true)
+    public void testMultiConsumerAcceptFunctionThree() throws InterruptedException {
+        CircuitBreaker breaker = mock(CircuitBreaker.class);
+        MultiBucketConsumerService.MultiBucketConsumer multiBucketConsumer = new MultiBucketConsumerService.MultiBucketConsumer(
+            DEFAULT_MAX_BUCKETS,
+            breaker
+        );
+
+        when(breaker.addEstimateBytesAndMaybeBreak(0, "allocated_buckets")).thenThrow(CircuitBreakingException.class);
+        int numberOfThreads = 5;
+        ExecutorService service = Executors.newFixedThreadPool(10);
+        CountDownLatch latch = new CountDownLatch(numberOfThreads);
+        long start = System.currentTimeMillis();
+        for (int i = 0; i < numberOfThreads; i++) {
+            service.submit(() -> {
+                try {
+                    multiBucketConsumer.accept3(0);
+                } catch (CircuitBreakingException e) {
+                    System.out.println("CircuitBreaker was thrown");
+                }
+                latch.countDown();
+            });
+        }
+        long end = System.currentTimeMillis();
+        latch.await();
+        System.out.println("DEBUG: accept3 took " + (end - start) + " MilliSeconds");
     }
 }

@@ -779,6 +779,7 @@ public abstract class OpenSearchIntegTestCase extends OpenSearchTestCase {
             featureSettings.put(builtInFlag.getKey(), builtInFlag.getDefaultRaw(Settings.EMPTY));
         }
         featureSettings.put(FeatureFlags.TELEMETRY_SETTING.getKey(), true);
+        featureSettings.put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH_SETTING.getKey(), true);
         return featureSettings.build();
     }
 
