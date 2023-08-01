@@ -33,6 +33,7 @@ package org.opensearch.search.aggregations;
 
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.core.common.breaker.CircuitBreaker;
+import org.opensearch.core.common.breaker.CircuitBreakingException;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.common.settings.Setting;
@@ -42,6 +43,7 @@ import org.opensearch.core.rest.RestStatus;
 import org.opensearch.search.aggregations.bucket.BucketsAggregator;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.IntConsumer;
 
 /**
@@ -129,11 +131,13 @@ public class MultiBucketConsumerService {
 
         // aggregations execute in a single thread so no atomic here
         private int count;
-        private int callCount = 0;
+        private LongAdder callCount;
+        private volatile boolean circuitBreakerTripped;
 
         public MultiBucketConsumer(int limit, CircuitBreaker breaker) {
             this.limit = limit;
             this.breaker = breaker;
+            callCount = new LongAdder();
         }
 
         @Override
@@ -153,10 +157,22 @@ public class MultiBucketConsumerService {
                     );
                 }
             }
-            // check parent circuit breaker every 1024 calls
-            callCount++;
-            if ((callCount & 0x3FF) == 0) {
-                breaker.addEstimateBytesAndMaybeBreak(0, "allocated_buckets");
+            callCount.increment();
+            // tripping the circuit breaker for other threads in case of concurrent search
+            // if the circuit breaker has tripped for one of the threads already, more info
+            // can be found on: https://github.com/opensearch-project/OpenSearch/issues/7785
+            if (circuitBreakerTripped) {
+                throw new CircuitBreakingException("Circuit breaker has tripped for one of the other threads",
+                    CircuitBreaker.Durability.PERMANENT);
+            }
+            // check parent circuit breaker every 1024 to (1024 + available processors) calls
+            if ((callCount.sum() & 0x3FF) <= Runtime.getRuntime().availableProcessors()) {
+                try {
+                    breaker.addEstimateBytesAndMaybeBreak(0, "allocated_buckets");
+                } catch (CircuitBreakingException e) {
+                    circuitBreakerTripped = true;
+                    throw e;
+                }
             }
         }
 
