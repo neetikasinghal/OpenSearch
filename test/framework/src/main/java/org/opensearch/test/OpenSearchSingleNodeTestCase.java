@@ -436,6 +436,9 @@ public abstract class OpenSearchSingleNodeTestCase extends OpenSearchTestCase {
             featureSettings.put(builtInFlag.getKey(), builtInFlag.getDefaultRaw(Settings.EMPTY));
         }
         featureSettings.put(FeatureFlags.TELEMETRY_SETTING.getKey(), true);
+        if(FeatureFlags.isEnabled(FeatureFlags.CONCURRENT_SEGMENT_SEARCH)) {
+            featureSettings.put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, true);
+        }
         return featureSettings.build();
     }
 
