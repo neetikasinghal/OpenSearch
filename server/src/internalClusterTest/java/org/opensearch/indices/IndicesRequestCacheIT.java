@@ -562,6 +562,8 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         OpenSearchAssertions.assertAllSuccessful(forceMergeResponse);
         refresh();
 
+        indexRandomForConcurrentSearch("index");
+
         assertCacheState(client, "index", 0, 0);
 
         SearchResponse r1 = client.prepareSearch("index")
