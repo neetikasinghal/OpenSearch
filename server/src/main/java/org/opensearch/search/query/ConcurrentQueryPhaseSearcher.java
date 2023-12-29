@@ -82,6 +82,11 @@ public class ConcurrentQueryPhaseSearcher extends DefaultQueryPhaseSearcher {
             final ReduceableSearchResult result = searcher.search(query, collectorManager);
             result.reduce(queryResult);
         } catch (RuntimeException re) {
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
             rethrowCauseIfPossible(re, searchContext);
         }
         if (searchContext.isSearchTimedOut()) {
