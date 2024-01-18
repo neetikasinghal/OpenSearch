@@ -40,6 +40,7 @@ import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.indices.breaker.BreakerSettings;
 import org.opensearch.indices.breaker.HierarchyCircuitBreakerService;
 
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -170,6 +171,9 @@ public class ChildMemoryCircuitBreaker implements CircuitBreaker {
             currentUsed = this.used.get();
             newUsed = currentUsed + bytes;
             long newUsedWithOverhead = (long) (newUsed * overheadConstant);
+            System.out.println(System.nanoTime() + "," + this.hashCode() + "," + currentUsed + "," + bytes + "," + newUsed + "," + Thread.currentThread()
+//                + "," + Arrays.toString(Thread.currentThread().getStackTrace())
+            );
             if (logger.isTraceEnabled()) {
                 logger.trace(
                     "[{}] Adding [{}][{}] to used bytes [new used: [{}], limit: {} [{}], estimate: {} [{}]]",
@@ -213,7 +217,11 @@ public class ChildMemoryCircuitBreaker implements CircuitBreaker {
      */
     @Override
     public long addWithoutBreaking(long bytes) {
+        long before = used.get();
         long u = used.addAndGet(bytes);
+        System.out.println(System.nanoTime() + "," + this.hashCode() + "," + before + "," + bytes + "," + u + "," + Thread.currentThread()
+//            + "," + Arrays.toString(Thread.currentThread().getStackTrace())
+        );
         logger.trace(() -> new ParameterizedMessage("[{}] Adjusted breaker by [{}] bytes, now [{}]", this.name, bytes, u));
         assert u >= 0 : "Used bytes: [" + u + "] must be >= 0";
         return u;

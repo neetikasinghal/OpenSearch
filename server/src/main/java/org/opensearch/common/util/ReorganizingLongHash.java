@@ -119,9 +119,17 @@ public class ReorganizingLongHash implements Releasable {
         grow = (long) (capacity * loadFactor);
         size = 0;
 
-        table = bigArrays.newLongArray(capacity, false);
-        table.fill(0, capacity, -1);  // -1 represents an empty slot
-        keys = bigArrays.newLongArray(initialCapacity, false);
+        boolean success = false;
+        try {
+            table = bigArrays.newLongArray(capacity, false);
+            table.fill(0, capacity, -1);  // -1 represents an empty slot
+            keys = bigArrays.newLongArray(initialCapacity, false);
+            success = true;
+        } finally {
+            if (!success){
+                Releasables.closeWhileHandlingException(table);
+            }
+        }
     }
 
     /**

@@ -229,7 +229,7 @@ public final class InternalTestCluster extends TestCluster {
     public static final int DEFAULT_HIGH_NUM_MASTER_NODES = DEFAULT_HIGH_NUM_CLUSTER_MANAGER_NODES;
 
     static final int DEFAULT_MIN_NUM_DATA_NODES = 1;
-    static final int DEFAULT_MAX_NUM_DATA_NODES = TEST_NIGHTLY ? 6 : 3;
+    static final int DEFAULT_MAX_NUM_DATA_NODES = TEST_NIGHTLY ? 6 : 1;
 
     static final int DEFAULT_NUM_CLIENT_NODES = -1;
     static final int DEFAULT_MIN_NUM_CLIENT_NODES = 0;

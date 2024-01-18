@@ -127,14 +127,18 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
         this.lookupGlobalOrd = values::lookupOrd;
         this.acceptedGlobalOrdinals = includeExclude == null ? ALWAYS_TRUE : includeExclude.acceptedGlobalOrdinals(values)::get;
         if (remapGlobalOrds) {
+            System.out.println("yoooooo its 1");
             this.collectionStrategy = new RemapGlobalOrds(cardinality);
+            System.out.println("Collection strategy hashcode1: " + this.collectionStrategy.hashCode() + " on thread " + Thread.currentThread());
         } else {
+            System.out.println("yoooooo its 2");
             this.collectionStrategy = cardinality.map(estimate -> {
                 if (estimate > 1) {
                     throw new AggregationExecutionException("Dense ords don't know how to collect from many buckets");
                 }
                 return new DenseGlobalOrds();
             });
+            System.out.println("Collection strategy hashcode2: " + this.collectionStrategy.hashCode() + " on thread " + Thread.currentThread());
         }
     }
 
@@ -279,6 +283,7 @@ public class GlobalOrdinalsStringTermsAggregator extends AbstractStringTermsAggr
 
     @Override
     protected void doClose() {
+        System.out.println("Close called with collection strategy: " + this.collectionStrategy.hashCode() + "collection strategy value: " + collectionStrategy + " on thread " + Thread.currentThread());
         Releasables.close(resultStrategy, collectionStrategy);
     }
 

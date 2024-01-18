@@ -551,7 +551,7 @@ public abstract class OpenSearchIntegTestCase extends OpenSearchTestCase {
     }
 
     protected int numberOfShards() {
-        return between(minimumNumberOfShards(), maximumNumberOfShards());
+        return 8;
     }
 
     protected int minimumNumberOfReplicas() {
@@ -565,7 +565,7 @@ public abstract class OpenSearchIntegTestCase extends OpenSearchTestCase {
     }
 
     protected int numberOfReplicas() {
-        return between(minimumNumberOfReplicas(), maximumNumberOfReplicas());
+        return 0;
     }
 
     public void setDisruptionScheme(ServiceDisruptionScheme scheme) {

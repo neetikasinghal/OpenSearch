@@ -52,6 +52,7 @@ import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.lucene.Lucene;
 import org.opensearch.common.lucene.search.TopDocsAndMaxScore;
 import org.opensearch.common.util.concurrent.EWMATrackingThreadPoolExecutor;
+import org.opensearch.core.common.breaker.CircuitBreakingException;
 import org.opensearch.core.tasks.TaskCancelledException;
 import org.opensearch.lucene.queries.SearchAfterSortedDocQuery;
 import org.opensearch.search.DocValueFormat;
@@ -304,6 +305,12 @@ public class QueryPhase {
                 }
             }
         } catch (Exception e) {
+            System.out.println("CB exception caught on thread: " + Thread.currentThread());
+//            try {
+//                Thread.sleep(5000);
+//            } catch (InterruptedException ex) {
+//                throw new RuntimeException(ex);
+//            }
             throw new QueryPhaseExecutionException(searchContext.shardTarget(), "Failed to execute main query", e);
         }
     }

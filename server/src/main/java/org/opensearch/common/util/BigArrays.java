@@ -516,6 +516,12 @@ public class BigArrays {
             success = true;
         } finally {
             if (!success) {
+                System.out.println("There is a CB exception in validate on thread " + Thread.currentThread());
+//                try {
+//                    Thread.sleep(5000);
+//                } catch (InterruptedException e) {
+//                    throw new RuntimeException(e);
+//                }
                 Releasables.closeWhileHandlingException(array);
             }
         }
