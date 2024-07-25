@@ -37,6 +37,8 @@ public abstract class ShardsBalancer {
      */
     abstract void balance();
 
+    abstract void tierShards();
+
     /**
      * Make a decision for allocating an unassigned shard.
      * @param shardRouting the shard for which the decision has to be made

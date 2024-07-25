@@ -54,6 +54,7 @@ import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.util.FeatureFlags;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -284,6 +285,9 @@ public class BalancedShardsAllocator implements ShardsAllocator {
             preferPrimaryShardBalance,
             preferPrimaryShardRebalance
         );
+        if (FeatureFlags.isEnabled(FeatureFlags.TIERED_REMOTE_INDEX)) {
+            localShardsBalancer.tierShards();
+        }
         localShardsBalancer.allocateUnassigned();
         localShardsBalancer.moveShards();
         localShardsBalancer.balance();

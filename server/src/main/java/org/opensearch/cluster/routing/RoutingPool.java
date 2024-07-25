@@ -11,6 +11,8 @@ package org.opensearch.cluster.routing;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.cluster.routing.allocation.RoutingAllocation;
+import org.opensearch.common.util.FeatureFlags;
+import org.opensearch.index.IndexModule;
 
 /**
  *  {@link RoutingPool} defines the different node types based on the assigned capabilities. The methods
@@ -58,6 +60,10 @@ public enum RoutingPool {
      * @return {@link RoutingPool} for the given index.
      */
     public static RoutingPool getIndexPool(IndexMetadata indexMetadata) {
-        return indexMetadata.isRemoteSnapshot() ? REMOTE_CAPABLE : LOCAL_ONLY;
+        boolean isTieredRemoteIndex = FeatureFlags.isEnabled(FeatureFlags.TIERED_REMOTE_INDEX)
+            && IndexModule.DataLocalityType.PARTIAL.name()
+                .equals(indexMetadata.getSettings().get(IndexModule.INDEX_STORE_LOCALITY_SETTING.getKey()));
+
+        return indexMetadata.isRemoteSnapshot() || isTieredRemoteIndex ? REMOTE_CAPABLE : LOCAL_ONLY;
     }
 }

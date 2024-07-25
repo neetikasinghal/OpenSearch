@@ -20,7 +20,6 @@ import org.opensearch.cluster.routing.allocation.MoveDecision;
 import org.opensearch.cluster.routing.allocation.RoutingAllocation;
 import org.opensearch.cluster.routing.allocation.decider.Decision;
 import org.opensearch.cluster.routing.allocation.decider.DiskThresholdDecider;
-import org.opensearch.common.Randomness;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -32,6 +31,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+
+import static org.opensearch.cluster.routing.allocation.allocator.ShardsBalancerUtils.getRemoteRoutingNodes;
+import static org.opensearch.cluster.routing.allocation.allocator.ShardsBalancerUtils.getShuffledRemoteNodes;
 
 /**
  * A {@link RemoteShardsBalancer} used by the {@link BalancedShardsAllocator} to perform allocation operations
@@ -64,7 +66,7 @@ public final class RemoteShardsBalancer extends ShardsBalancer {
             return;
         }
 
-        Queue<RoutingNode> nodeQueue = getShuffledRemoteNodes();
+        Queue<RoutingNode> nodeQueue = getShuffledRemoteNodes(routingNodes);
         if (nodeQueue.isEmpty()) {
             logger.debug("No remote searcher nodes available for unassigned remote shards.");
             failUnattemptedShards();
@@ -136,7 +138,7 @@ public final class RemoteShardsBalancer extends ShardsBalancer {
      * @param excludedNodes contains the list of classified nodes that are unable for assigning shards
      */
     private void classifyNodesForShardMovement(Queue<RoutingNode> eligibleNodes, Queue<RoutingNode> excludedNodes) {
-        List<RoutingNode> remoteRoutingNodes = getRemoteRoutingNodes();
+        List<RoutingNode> remoteRoutingNodes = getRemoteRoutingNodes(routingNodes);
         int throttledNodeCount = 0;
         for (RoutingNode node : remoteRoutingNodes) {
             Decision nodeDecision = allocation.deciders().canAllocateAnyShardToNode(node, allocation);
@@ -236,7 +238,7 @@ public final class RemoteShardsBalancer extends ShardsBalancer {
      */
     @Override
     void balance() {
-        List<RoutingNode> remoteRoutingNodes = getRemoteRoutingNodes();
+        List<RoutingNode> remoteRoutingNodes = getRemoteRoutingNodes(routingNodes);
         logger.trace("Performing balancing for remote shards.");
 
         if (remoteRoutingNodes.isEmpty()) {
@@ -264,6 +266,17 @@ public final class RemoteShardsBalancer extends ShardsBalancer {
             RoutingNode sourceNode = sourceNodes.poll();
             tryRebalanceNode(sourceNode, targetNodes, avgPrimaryPerNode, nodePrimaryShardCount);
         }
+    }
+
+    /**
+     * Intended to trigger shard relocation for the shards that are submitted
+     * for tiering to go from remote node pool to local capable node
+     * pool.
+     * yet to be implemented
+     */
+    @Override
+    void tierShards() {
+        throw new UnsupportedOperationException("Warm to hot tiering is not yet supported");
     }
 
     /**
@@ -629,26 +642,6 @@ public final class RemoteShardsBalancer extends ShardsBalancer {
                 );
             }
         }
-    }
-
-    private Queue<RoutingNode> getShuffledRemoteNodes() {
-        List<RoutingNode> nodeList = getRemoteRoutingNodes();
-        Randomness.shuffle(nodeList);
-        return new ArrayDeque<>(nodeList);
-    }
-
-    /**
-     * Filters out and returns the list of {@link RoutingPool#REMOTE_CAPABLE} nodes from the routing nodes in cluster.
-     * @return list of {@link RoutingPool#REMOTE_CAPABLE} routing nodes.
-     */
-    private List<RoutingNode> getRemoteRoutingNodes() {
-        List<RoutingNode> nodeList = new ArrayList<>();
-        for (RoutingNode rNode : routingNodes) {
-            if (RoutingPool.REMOTE_CAPABLE.equals(RoutingPool.getNodePool(rNode))) {
-                nodeList.add(rNode);
-            }
-        }
-        return nodeList;
     }
 
     /**

@@ -30,6 +30,7 @@ import org.opensearch.cluster.routing.allocation.decider.Decision;
 import org.opensearch.cluster.routing.allocation.decider.DiskThresholdDecider;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.gateway.PriorityComparator;
+import org.opensearch.index.IndexModule;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -39,11 +40,15 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import static org.opensearch.cluster.routing.ShardRoutingState.RELOCATING;
+import static org.opensearch.cluster.routing.allocation.allocator.ShardsBalancerUtils.getIndicesPendingTiering;
+import static org.opensearch.cluster.routing.allocation.allocator.ShardsBalancerUtils.getShardsPendingRelocation;
+import static org.opensearch.cluster.routing.allocation.allocator.ShardsBalancerUtils.getShuffledRemoteNodes;
 
 /**
  * A {@link LocalShardsBalancer} used by the {@link BalancedShardsAllocator} to perform allocation operations
@@ -524,6 +529,115 @@ public class LocalShardsBalancer extends ShardsBalancer {
         Decision nodeLevelAllocationDecision = allocation.deciders().canAllocateAnyShardToNode(targetNode, allocation);
         if (nodeLevelAllocationDecision.type() != Decision.Type.YES) {
             inEligibleTargetNode.add(targetNode);
+        }
+    }
+
+    /**
+     * Triggers shard relocation for the shards that are submitted
+     * for tiering to go from local node pool to remote capable node
+     * pool.
+     */
+    public void tierShards() {
+        final Set<String> indicesPendingTiering = getIndicesPendingTiering(allocation, IndexModule.TieringState.HOT_TO_WARM.name());
+        if (indicesPendingTiering.isEmpty()) {
+            logger.debug("No indices found eligible for hot to warm tiering.");
+            return;
+        }
+
+        logger.debug("[HotToWarmTiering] Indices pending tiering are [{}]", indicesPendingTiering);
+        final List<ShardRouting> shardsPendingTiering = new ArrayList<>();
+        for (String index : indicesPendingTiering) {
+            List<ShardRouting> shardsPendingRelocation = getShardsPendingRelocation(index, allocation);
+            if (!shardsPendingRelocation.isEmpty()) {
+                logger.trace(
+                    "[HotToWarmTiering] Found started shards [{}] for the index [{}] with target pool as REMOTE_CAPABLE. Adding to the tiering list.",
+                    shardsPendingRelocation,
+                    index
+                );
+                shardsPendingTiering.addAll(shardsPendingRelocation);
+            }
+        }
+
+        if (shardsPendingTiering.isEmpty()) {
+            logger.debug("No shards found eligible for hot to warm tiering for indices [{}].", indicesPendingTiering);
+            return;
+        }
+
+        final Queue<RoutingNode> nodeQueue = getShuffledRemoteNodes(routingNodes);
+        if (nodeQueue.isEmpty()) {
+            logger.warn("No nodes available in the remote capable pool for hot to warm tiering");
+            return;
+        }
+        // Relocate shards pending tiering
+        for (ShardRouting shard : shardsPendingTiering) {
+            if (nodeQueue.isEmpty()) {
+                logger.error("[HotToWarmTiering] No nodes available. Cannot tier to target pool: [{}]", RoutingPool.REMOTE_CAPABLE.name());
+                break;
+            }
+            logger.info(
+                "[HotToWarmTiering] Processing tiering, Target Pool: [{}]. Pending Shards: [{}], Available Nodes: [{}]",
+                RoutingPool.REMOTE_CAPABLE.name(),
+                shardsPendingTiering,
+                nodeQueue.size()
+            );
+            processShardsPendingTiering(nodeQueue, shard);
+        }
+    }
+
+    /**
+     * Triggers shard relocation for a given shard to the target node
+     * @param nodeQueue queue of target routing nodes
+     * @param shard shard routing
+     */
+    void processShardsPendingTiering(final Queue<RoutingNode> nodeQueue, final ShardRouting shard) {
+        // Find a tiering target node for shard and initiate relocation
+        int nodesCheckedForShard = 0;
+        while (!nodeQueue.isEmpty()) {
+            RoutingNode targetNode = nodeQueue.poll();
+            Decision tieringDecision = allocation.deciders().canAllocate(shard, targetNode, allocation);
+            if (tieringDecision.type() == Decision.Type.YES) {
+                logger.debug(
+                    "[HotToWarmTiering] Relocating shard: [{}] from node: [{}] to node: [{}].",
+                    shard.toString(),
+                    shard.currentNodeId(),
+                    targetNode.nodeId()
+                );
+                routingNodes.relocateShard(
+                    shard,
+                    targetNode.nodeId(),
+                    allocation.clusterInfo().getShardSize(shard, ShardRouting.UNAVAILABLE_EXPECTED_SHARD_SIZE),
+                    allocation.changes()
+                );
+                nodeQueue.offer(targetNode);
+                break;
+            } else {
+                logger.trace(
+                    "[HotToWarmTiering] Cannot relocate shard: [{}] to node: [{}]. Decisions: [{}]",
+                    shard.toString(),
+                    targetNode.nodeId(),
+                    tieringDecision.getDecisions()
+                );
+
+                Decision nodeLevelDecision = allocation.deciders().canAllocateAnyShardToNode(targetNode, allocation);
+                if (nodeLevelDecision.type() == Decision.Type.YES) {
+                    logger.debug(
+                        "[HotToWarmTiering] Node: [{}] can still accept shards. Adding it back to the queue.",
+                        targetNode.nodeId()
+                    );
+                    nodeQueue.offer(targetNode);
+                    nodesCheckedForShard++;
+                } else {
+                    logger.debug(
+                        "[HotToWarmTiering] Node: [{}] cannot accept any more shards. Removing it from queue.",
+                        targetNode.nodeId()
+                    );
+                }
+
+                // Break out if all nodes in the queue have been checked for this shard
+                if (nodeQueue.size() == nodesCheckedForShard) {
+                    break;
+                }
+            }
         }
     }
 
