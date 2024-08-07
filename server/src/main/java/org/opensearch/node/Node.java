@@ -179,6 +179,7 @@ import org.opensearch.indices.replication.SegmentReplicationSourceFactory;
 import org.opensearch.indices.replication.SegmentReplicationSourceService;
 import org.opensearch.indices.replication.SegmentReplicationTargetService;
 import org.opensearch.indices.store.IndicesStore;
+import org.opensearch.indices.tiering.HotToWarmTieringService;
 import org.opensearch.ingest.IngestService;
 import org.opensearch.monitor.MonitorService;
 import org.opensearch.monitor.fs.FsHealthService;
@@ -263,6 +264,7 @@ import org.opensearch.transport.TransportInterceptor;
 import org.opensearch.transport.TransportService;
 import org.opensearch.usage.UsageService;
 import org.opensearch.watcher.ResourceWatcherService;
+import org.opensearch.wlm.WorkloadManagementTransportInterceptor;
 
 import javax.net.ssl.SNIHostName;
 
@@ -381,7 +383,7 @@ public class Node implements Closeable {
 
     public static final Setting<String> NODE_SEARCH_CACHE_SIZE_SETTING = new Setting<>(
         "node.search.cache.size",
-        s -> (FeatureFlags.isEnabled(FeatureFlags.TIERED_REMOTE_INDEX_SETTING) || DiscoveryNode.isDedicatedSearchNode(s)) ? "80%" : ZERO,
+        s -> (DiscoveryNode.isDedicatedSearchNode(s)) ? "80%" : ZERO,
         Node::validateFileCacheSize,
         Property.NodeScope
     );
@@ -1047,6 +1049,10 @@ public class Node implements Closeable {
                 admissionControlService
             );
 
+            WorkloadManagementTransportInterceptor workloadManagementTransportInterceptor = new WorkloadManagementTransportInterceptor(
+                threadPool
+            );
+
             final Collection<SecureSettingsFactory> secureSettingsFactories = pluginsService.filterPlugins(Plugin.class)
                 .stream()
                 .map(p -> p.getSecureSettingFactory(settings))
@@ -1054,7 +1060,10 @@ public class Node implements Closeable {
                 .map(Optional::get)
                 .collect(Collectors.toList());
 
-            List<TransportInterceptor> transportInterceptors = List.of(admissionControlTransportInterceptor);
+            List<TransportInterceptor> transportInterceptors = List.of(
+                admissionControlTransportInterceptor,
+                workloadManagementTransportInterceptor
+            );
             final NetworkModule networkModule = new NetworkModule(
                 settings,
                 pluginsService.filterPlugins(NetworkPlugin.class),
@@ -1197,6 +1206,13 @@ public class Node implements Closeable {
                 metadataIndexUpgradeService,
                 shardLimitValidator,
                 remoteClusterStateService
+            );
+
+            final HotToWarmTieringService hotToWarmTieringService = new HotToWarmTieringService(
+                settings,
+                clusterService,
+                clusterModule.getIndexNameExpressionResolver(),
+                clusterModule.getAllocationService()
             );
 
             final DiskThresholdMonitor diskThresholdMonitor = new DiskThresholdMonitor(
@@ -1395,6 +1411,9 @@ public class Node implements Closeable {
                 b.bind(TransportNodesSnapshotsStatus.class).toInstance(nodesSnapshotsStatus);
                 b.bind(RestoreService.class).toInstance(restoreService);
                 b.bind(RemoteStoreRestoreService.class).toInstance(remoteStoreRestoreService);
+                if (FeatureFlags.isEnabled(FeatureFlags.TIERED_REMOTE_INDEX)) {
+                    b.bind(HotToWarmTieringService.class).toInstance(hotToWarmTieringService);
+                }
                 b.bind(RerouteService.class).toInstance(rerouteService);
                 b.bind(ShardLimitValidator.class).toInstance(shardLimitValidator);
                 b.bind(FsHealthService.class).toInstance(fsHealthService);
@@ -2029,8 +2048,7 @@ public class Node implements Closeable {
      * Else it configures the size to 80% of total capacity for a dedicated search node, if not explicitly defined.
      */
     private void initializeFileCache(Settings settings, CircuitBreaker circuitBreaker) throws IOException {
-        boolean isWritableRemoteIndexEnabled = FeatureFlags.isEnabled(FeatureFlags.TIERED_REMOTE_INDEX_SETTING);
-        if (DiscoveryNode.isSearchNode(settings) == false && isWritableRemoteIndexEnabled == false) {
+        if (DiscoveryNode.isSearchNode(settings) == false) {
             return;
         }
 

@@ -10,18 +10,25 @@ package org.opensearch.index.codec.composite;
 
 import org.apache.lucene.codecs.DocValuesConsumer;
 import org.apache.lucene.codecs.DocValuesProducer;
+import org.apache.lucene.index.DocValues;
+import org.apache.lucene.index.DocValuesType;
+import org.apache.lucene.index.EmptyDocValuesProducer;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.MergeState;
 import org.apache.lucene.index.SegmentWriteState;
+import org.apache.lucene.index.SortedNumericDocValues;
 import org.opensearch.common.annotation.ExperimentalApi;
+import org.opensearch.index.codec.composite.datacube.startree.StarTreeValues;
+import org.opensearch.index.compositeindex.datacube.startree.StarTreeField;
 import org.opensearch.index.compositeindex.datacube.startree.builder.StarTreesBuilder;
 import org.opensearch.index.mapper.CompositeMappedFieldType;
 import org.opensearch.index.mapper.MapperService;
-import org.opensearch.index.mapper.StarTreeMapper;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -40,6 +47,8 @@ public class Composite99DocValuesWriter extends DocValuesConsumer {
     AtomicReference<MergeState> mergeState = new AtomicReference<>();
     private final Set<CompositeMappedFieldType> compositeMappedFieldTypes;
     private final Set<String> compositeFieldSet;
+    private final Set<String> segmentFieldSet;
+    private final boolean segmentHasCompositeFields;
 
     private final Map<String, DocValuesProducer> fieldProducerMap = new HashMap<>();
 
@@ -50,9 +59,17 @@ public class Composite99DocValuesWriter extends DocValuesConsumer {
         this.mapperService = mapperService;
         this.compositeMappedFieldTypes = mapperService.getCompositeFieldTypes();
         compositeFieldSet = new HashSet<>();
+        segmentFieldSet = new HashSet<>();
+        for (FieldInfo fi : segmentWriteState.fieldInfos) {
+            if (DocValuesType.SORTED_NUMERIC.equals(fi.getDocValuesType())) {
+                segmentFieldSet.add(fi.name);
+            }
+        }
         for (CompositeMappedFieldType type : compositeMappedFieldTypes) {
             compositeFieldSet.addAll(type.fields());
         }
+        // check if there are any composite fields which are part of the segment
+        segmentHasCompositeFields = Collections.disjoint(segmentFieldSet, compositeFieldSet) == false;
     }
 
     @Override
@@ -74,7 +91,7 @@ public class Composite99DocValuesWriter extends DocValuesConsumer {
     public void addSortedNumericField(FieldInfo field, DocValuesProducer valuesProducer) throws IOException {
         delegate.addSortedNumericField(field, valuesProducer);
         // Perform this only during flush flow
-        if (mergeState.get() == null) {
+        if (mergeState.get() == null && segmentHasCompositeFields) {
             createCompositeIndicesIfPossible(valuesProducer, field);
         }
     }
@@ -95,23 +112,91 @@ public class Composite99DocValuesWriter extends DocValuesConsumer {
             fieldProducerMap.put(field.name, valuesProducer);
             compositeFieldSet.remove(field.name);
         }
+        segmentFieldSet.remove(field.name);
+        if (segmentFieldSet.isEmpty()) {
+            Set<String> compositeFieldSetCopy = new HashSet<>(compositeFieldSet);
+            for (String compositeField : compositeFieldSetCopy) {
+                fieldProducerMap.put(compositeField, new EmptyDocValuesProducer() {
+                    @Override
+                    public SortedNumericDocValues getSortedNumeric(FieldInfo field) {
+                        return DocValues.emptySortedNumeric();
+                    }
+                });
+                compositeFieldSet.remove(compositeField);
+            }
+        }
         // we have all the required fields to build composite fields
         if (compositeFieldSet.isEmpty()) {
             for (CompositeMappedFieldType mappedType : compositeMappedFieldTypes) {
-                if (mappedType instanceof StarTreeMapper.StarTreeFieldType) {
-                    try (StarTreesBuilder starTreesBuilder = new StarTreesBuilder(fieldProducerMap, state, mapperService)) {
-                        starTreesBuilder.build();
+                if (mappedType.getCompositeIndexType().equals(CompositeMappedFieldType.CompositeFieldType.STAR_TREE)) {
+                    try (StarTreesBuilder starTreesBuilder = new StarTreesBuilder(state, mapperService)) {
+                        starTreesBuilder.build(fieldProducerMap);
                     }
                 }
             }
         }
+
     }
 
     @Override
     public void merge(MergeState mergeState) throws IOException {
         this.mergeState.compareAndSet(null, mergeState);
         super.merge(mergeState);
-        // TODO : handle merge star tree
-        // mergeStarTreeFields(mergeState);
+        mergeCompositeFields(mergeState);
+    }
+
+    /**
+     * Merges composite fields from multiple segments
+     * @param mergeState merge state
+     */
+    private void mergeCompositeFields(MergeState mergeState) throws IOException {
+        mergeStarTreeFields(mergeState);
+    }
+
+    /**
+     * Merges star tree data fields from multiple segments
+     * @param mergeState merge state
+     */
+    private void mergeStarTreeFields(MergeState mergeState) throws IOException {
+        Map<String, List<StarTreeValues>> starTreeSubsPerField = new HashMap<>();
+        StarTreeField starTreeField = null;
+        for (int i = 0; i < mergeState.docValuesProducers.length; i++) {
+            CompositeIndexReader reader = null;
+            if (mergeState.docValuesProducers[i] == null) {
+                continue;
+            }
+            if (mergeState.docValuesProducers[i] instanceof CompositeIndexReader) {
+                reader = (CompositeIndexReader) mergeState.docValuesProducers[i];
+            } else {
+                continue;
+            }
+
+            List<CompositeIndexFieldInfo> compositeFieldInfo = reader.getCompositeIndexFields();
+            for (CompositeIndexFieldInfo fieldInfo : compositeFieldInfo) {
+                if (fieldInfo.getType().equals(CompositeMappedFieldType.CompositeFieldType.STAR_TREE)) {
+                    CompositeIndexValues compositeIndexValues = reader.getCompositeIndexValues(fieldInfo);
+                    if (compositeIndexValues instanceof StarTreeValues) {
+                        StarTreeValues starTreeValues = (StarTreeValues) compositeIndexValues;
+                        List<StarTreeValues> fieldsList = starTreeSubsPerField.getOrDefault(fieldInfo.getField(), Collections.emptyList());
+                        if (starTreeField == null) {
+                            starTreeField = starTreeValues.getStarTreeField();
+                        }
+                        // assert star tree configuration is same across segments
+                        else {
+                            if (starTreeField.equals(starTreeValues.getStarTreeField()) == false) {
+                                throw new IllegalArgumentException(
+                                    "star tree field configuration must match the configuration of the field being merged"
+                                );
+                            }
+                        }
+                        fieldsList.add(starTreeValues);
+                        starTreeSubsPerField.put(fieldInfo.getField(), fieldsList);
+                    }
+                }
+            }
+        }
+        try (StarTreesBuilder starTreesBuilder = new StarTreesBuilder(state, mapperService)) {
+            starTreesBuilder.buildDuringMerge(starTreeSubsPerField);
+        }
     }
 }
