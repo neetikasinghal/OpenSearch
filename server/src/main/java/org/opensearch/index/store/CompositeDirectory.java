@@ -198,6 +198,11 @@ public class CompositeDirectory extends FilterDirectory {
         cacheFile(dest);
     }
 
+    // write a function to check and perform the switch of the files based on the age
+    // use list all function to check for the age
+    // get the index input for the file and call switch on it
+    // dont need this
+
     /**
      * Opens a stream for reading an existing file.
      * Check whether the file is present locally or in remote and return the IndexInput accordingly

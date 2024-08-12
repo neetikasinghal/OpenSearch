@@ -31,6 +31,8 @@ public class FullFileCachedIndexInput extends FileCachedIndexInput {
     private static final Logger logger = LogManager.getLogger(FullFileCachedIndexInput.class);
     private final Set<FullFileCachedIndexInput> clones;
 
+    protected volatile boolean blockBased = false;
+
     public FullFileCachedIndexInput(FileCache cache, Path filePath, IndexInput underlyingIndexInput) {
         this(cache, filePath, underlyingIndexInput, false);
     }
@@ -77,6 +79,20 @@ public class FullFileCachedIndexInput extends FileCachedIndexInput {
         clones.add(slicedIndexInput);
         cache.incRef(filePath);
         return slicedIndexInput;
+    }
+
+    public synchronized void switchToBlockBased() throws IOException {
+        IndexInput newUnderlyingIndexInput = null;
+//        newUnderlyingIndexInput = getRemoteIndexInput();
+
+        newUnderlyingIndexInput.seek(luceneIndexInput.getFilePointer());
+        IndexInput currentUnderlyingIndexInput = luceneIndexInput;
+        luceneIndexInput = newUnderlyingIndexInput;
+        blockBased = true;
+        // call to the switch for its clones and then close
+        if (currentUnderlyingIndexInput != null) {
+            currentUnderlyingIndexInput.close();
+        }
     }
 
     /**

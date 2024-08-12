@@ -12,6 +12,7 @@ import org.apache.lucene.store.AlreadyClosedException;
 import org.apache.lucene.store.IndexInput;
 import org.opensearch.common.annotation.ExperimentalApi;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -21,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * @opensearch.experimental
  */
 @ExperimentalApi
-public class CachedFullFileIndexInput implements CachedIndexInput {
+public class CachedFullFileIndexInput implements SwitchableCachedIndexInput {
     private final FileCache fileCache;
     private final Path path;
     private final FullFileCachedIndexInput fullFileCachedIndexInput;
@@ -70,5 +71,10 @@ public class CachedFullFileIndexInput implements CachedIndexInput {
         if (!isClosed.getAndSet(true)) {
             fullFileCachedIndexInput.close();
         }
+    }
+
+    @Override
+    public void switchToBlockBased() throws IOException {
+        fullFileCachedIndexInput.switchToBlockBased();
     }
 }
