@@ -72,8 +72,8 @@ import org.opensearch.search.aggregations.InternalAggregation;
 import org.opensearch.search.aggregations.SearchContextAggregations;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.search.collapse.CollapseContext;
+import org.opensearch.search.deciders.ConcurrentSearchDecider;
 import org.opensearch.search.deciders.ConcurrentSearchDecision;
-import org.opensearch.search.deciders.ConcurrentSearchRequestDecider;
 import org.opensearch.search.deciders.ConcurrentSearchVisitor;
 import org.opensearch.search.dfs.DfsSearchResult;
 import org.opensearch.search.fetch.FetchPhase;
@@ -106,14 +106,13 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
+import java.util.stream.Collectors;
 
 import static org.opensearch.search.SearchService.CARDINALITY_AGGREGATION_PRUNING_THRESHOLD;
 import static org.opensearch.search.SearchService.CLUSTER_CONCURRENT_SEGMENT_SEARCH_MODE;
@@ -138,7 +137,7 @@ final class DefaultSearchContext extends SearchContext {
     private final ShardSearchRequest request;
     private final SearchShardTarget shardTarget;
     private final LongSupplier relativeTimeSupplier;
-    private final Collection<ConcurrentSearchRequestDecider.Factory> concurrentSearchDeciderFactories;
+    private final Collection<ConcurrentSearchDecider> concurrentSearchDeciders;
     private SearchType searchType;
     private final BigArrays bigArrays;
     private final IndexShard indexShard;
@@ -224,7 +223,7 @@ final class DefaultSearchContext extends SearchContext {
         boolean validate,
         Executor executor,
         Function<SearchSourceBuilder, InternalAggregation.ReduceContextBuilder> requestToAggReduceContextBuilder,
-        Collection<ConcurrentSearchRequestDecider.Factory> concurrentSearchDeciderFactories
+        Collection<ConcurrentSearchDecider> concurrentSearchDeciders
     ) throws IOException {
         this.readerContext = readerContext;
         this.request = request;
@@ -268,7 +267,7 @@ final class DefaultSearchContext extends SearchContext {
 
         this.maxAggRewriteFilters = evaluateFilterRewriteSetting();
         this.cardinalityAggregationPruningThreshold = evaluateCardinalityAggregationPruningThreshold();
-        this.concurrentSearchDeciderFactories = concurrentSearchDeciderFactories;
+        this.concurrentSearchDeciders = concurrentSearchDeciders;
         this.keywordIndexOrDocValuesEnabled = evaluateKeywordIndexOrDocValuesEnabled();
     }
 
@@ -933,21 +932,14 @@ final class DefaultSearchContext extends SearchContext {
 
     private boolean evaluateAutoMode() {
 
-        final Set<ConcurrentSearchRequestDecider> concurrentSearchRequestDeciders = new HashSet<>();
-
-        // create the ConcurrentSearchRequestDeciders using registered factories
-        for (ConcurrentSearchRequestDecider.Factory deciderFactory : concurrentSearchDeciderFactories) {
-            final Optional<ConcurrentSearchRequestDecider> concurrentSearchRequestDecider = deciderFactory.create(
-                indexService.getIndexSettings()
-            );
-            concurrentSearchRequestDecider.ifPresent(concurrentSearchRequestDeciders::add);
-
-        }
-
+        // filter out deciders that want to opt-out of decision-making
+        final Set<ConcurrentSearchDecider> filteredDeciders = concurrentSearchDeciders.stream()
+            .filter(concurrentSearchDecider -> concurrentSearchDecider.canEvaluateForIndex(indexService.getIndexSettings()))
+            .collect(Collectors.toSet());
         // evaluate based on concurrent search query visitor
-        if (concurrentSearchRequestDeciders.size() > 0) {
+        if (filteredDeciders.size() > 0) {
             ConcurrentSearchVisitor concurrentSearchVisitor = new ConcurrentSearchVisitor(
-                concurrentSearchRequestDeciders,
+                filteredDeciders,
                 indexService.getIndexSettings()
             );
             if (request().source() != null && request().source().query() != null) {
@@ -957,7 +949,7 @@ final class DefaultSearchContext extends SearchContext {
         }
 
         final List<ConcurrentSearchDecision> decisions = new ArrayList<>();
-        for (ConcurrentSearchRequestDecider decider : concurrentSearchRequestDeciders) {
+        for (ConcurrentSearchDecider decider : filteredDeciders) {
             ConcurrentSearchDecision decision = decider.getConcurrentSearchDecision();
             if (decision != null) {
                 if (logger.isDebugEnabled()) {

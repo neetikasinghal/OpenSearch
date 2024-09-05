@@ -41,7 +41,6 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
-import org.opensearch.index.IndexSettings;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryRewriteContext;
 import org.opensearch.index.query.QueryShardContext;
@@ -70,7 +69,7 @@ import org.opensearch.search.aggregations.support.ValuesSourceAggregatorFactory;
 import org.opensearch.search.aggregations.support.ValuesSourceConfig;
 import org.opensearch.search.aggregations.support.ValuesSourceRegistry;
 import org.opensearch.search.aggregations.support.ValuesSourceType;
-import org.opensearch.search.deciders.ConcurrentSearchRequestDecider;
+import org.opensearch.search.deciders.ConcurrentSearchDecider;
 import org.opensearch.search.fetch.FetchSubPhase;
 import org.opensearch.search.fetch.subphase.ExplainPhase;
 import org.opensearch.search.fetch.subphase.highlight.CustomHighlighter;
@@ -502,12 +501,12 @@ public class SearchModuleTests extends OpenSearchTestCase {
         expectThrows(IllegalStateException.class, () -> new SearchModule(Settings.EMPTY, searchPlugins));
     }
 
-    public void testRegisterConcurrentSearchRequestDecidersNoExternalPlugins() {
+    public void testRegisterConcurrentSearchDecidersNoExternalPlugins() {
         SearchModule searchModule = new SearchModule(Settings.EMPTY, Collections.emptyList());
-        assertEquals(searchModule.getConcurrentSearchRequestDeciderFactories().size(), 0);
+        assertEquals(searchModule.getConcurrentSearchDeciders().size(), 0);
     }
 
-    public void testRegisterConcurrentSearchRequestDecidersExternalPluginsWithNoDeciders() {
+    public void testRegisterConcurrentSearchDecidersExternalPluginsWithNoDeciders() {
         SearchPlugin plugin1 = new SearchPlugin() {
             @Override
             public Optional<ExecutorServiceProvider> getIndexSearcherExecutorProvider() {
@@ -522,10 +521,10 @@ public class SearchModuleTests extends OpenSearchTestCase {
         searchPlugins.add(plugin2);
         SearchModule searchModule = new SearchModule(Settings.EMPTY, searchPlugins);
 
-        assertEquals(searchModule.getConcurrentSearchRequestDeciderFactories().size(), 0);
+        assertEquals(searchModule.getConcurrentSearchDeciders().size(), 0);
     }
 
-    public void testRegisterConcurrentSearchRequestDecidersExternalPluginsWithDeciders() {
+    public void testRegisterConcurrentSearchDecidersExternalPluginsWithDeciders() {
         SearchPlugin pluginDecider1 = new SearchPlugin() {
             @Override
             public Optional<ExecutorServiceProvider> getIndexSearcherExecutorProvider() {
@@ -533,25 +532,15 @@ public class SearchModuleTests extends OpenSearchTestCase {
             }
 
             @Override
-            public Optional<ConcurrentSearchRequestDecider.Factory> getConcurrentSearchRequestDeciderFactory() {
-                return Optional.of(new ConcurrentSearchRequestDecider.Factory() {
-                    @Override
-                    public Optional<ConcurrentSearchRequestDecider> create(IndexSettings indexSettings) {
-                        return Optional.of(mock(ConcurrentSearchRequestDecider.class));
-                    }
-                });
+            public ConcurrentSearchDecider getConcurrentSearchDecider() {
+                return mock(ConcurrentSearchDecider.class);
             }
         };
 
         SearchPlugin pluginDecider2 = new SearchPlugin() {
             @Override
-            public Optional<ConcurrentSearchRequestDecider.Factory> getConcurrentSearchRequestDeciderFactory() {
-                return Optional.of(new ConcurrentSearchRequestDecider.Factory() {
-                    @Override
-                    public Optional<ConcurrentSearchRequestDecider> create(IndexSettings indexSettings) {
-                        return Optional.of(mock(ConcurrentSearchRequestDecider.class));
-                    }
-                });
+            public ConcurrentSearchDecider getConcurrentSearchDecider() {
+                return mock(ConcurrentSearchDecider.class);
             }
         };
 
@@ -560,7 +549,23 @@ public class SearchModuleTests extends OpenSearchTestCase {
         searchPlugins.add(pluginDecider2);
 
         SearchModule searchModule = new SearchModule(Settings.EMPTY, searchPlugins);
-        assertEquals(searchModule.getConcurrentSearchRequestDeciderFactories().size(), 2);
+        assertEquals(searchModule.getConcurrentSearchDeciders().size(), 2);
+    }
+
+    public void testRegisterConcurrentSearchDecidersPluginWithNullDecider() {
+        SearchPlugin pluginWithNullDecider = new SearchPlugin() {
+            @Override
+            public ConcurrentSearchDecider getConcurrentSearchDecider() {
+                return null;
+            }
+        };
+
+        List<SearchPlugin> searchPlugins = new ArrayList<>();
+        searchPlugins.add(pluginWithNullDecider);
+        SearchModule searchModule = new SearchModule(Settings.EMPTY, searchPlugins);
+        // null decider is filtered out, so 0 deciders
+        assertEquals(searchModule.getConcurrentSearchDeciders().size(), 0);
+
     }
 
     private static final String[] NON_DEPRECATED_QUERIES = new String[] {

@@ -57,7 +57,7 @@ import org.opensearch.script.ScriptEngine;
 import org.opensearch.script.ScriptService;
 import org.opensearch.search.MockSearchService;
 import org.opensearch.search.SearchService;
-import org.opensearch.search.deciders.ConcurrentSearchRequestDecider;
+import org.opensearch.search.deciders.ConcurrentSearchDecider;
 import org.opensearch.search.fetch.FetchPhase;
 import org.opensearch.search.query.QueryPhase;
 import org.opensearch.tasks.TaskResourceTrackingService;
@@ -158,7 +158,7 @@ public class MockNode extends Node {
         CircuitBreakerService circuitBreakerService,
         Executor indexSearcherExecutor,
         TaskResourceTrackingService taskResourceTrackingService,
-        Collection<ConcurrentSearchRequestDecider.Factory> concurrentSearchDeciderFactories
+        Collection<ConcurrentSearchDecider> concurrentSearchDecidersList
     ) {
         if (getPluginsService().filterPlugins(MockSearchService.TestPlugin.class).isEmpty()) {
             return super.newSearchService(
@@ -173,7 +173,7 @@ public class MockNode extends Node {
                 circuitBreakerService,
                 indexSearcherExecutor,
                 taskResourceTrackingService,
-                concurrentSearchDeciderFactories
+                concurrentSearchDecidersList
             );
         }
         return new MockSearchService(
